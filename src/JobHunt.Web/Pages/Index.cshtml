@@ -1,0 +1,42 @@
+@page
+@model IndexModel
+@{ ViewData["Title"] = "Cadastro de vagas"; }
+<div class="eyebrow">SEUS ARQUIVOS</div>
+<h1>Uma vaga de cada vez.</h1>
+<p class="intro">Cole o email e o assunto. O JobHunt acrescenta a entrada ao seu arquivo TXT.</p>
+<div asp-validation-summary="All" class="errors" role="alert"></div>
+<div class="columns">
+<section class="card">
+    <h2>Adicionar uma vaga</h2>
+    <form method="post" asp-page-handler="Add">
+        <label asp-for="FileName">Nome do TXT</label>
+        <input asp-for="FileName" list="txt-files" required maxlength="120" />
+        <datalist id="txt-files">@foreach (var file in Model.Files) { <option value="@file"></option> }</datalist>
+        <label asp-for="Entry">Informações da vaga</label>
+        <textarea asp-for="Entry" rows="7" required placeholder="Email : recrutamento@example.com&#10;Assunto a ser colocado no email : apinfo - 85202 - An. Negocios"></textarea>
+        <p class="hint">Uma entrada por vez. O mesmo email pode ter assuntos diferentes.</p>
+        <button type="submit">Adicionar ao TXT</button>
+    </form>
+</section>
+<section class="card">
+    <h2>Continuar um arquivo</h2>
+    @if (Model.Files.Length == 0) { <p class="muted">Seus arquivos aparecerão aqui após a primeira inclusão.</p> }
+    <ul class="file-list">@foreach (var file in Model.Files) {
+        <li><a asp-page="/Index" asp-route-file="@file">@file</a><a asp-page-handler="Download" asp-route-file="@file">Baixar</a></li>
+    }</ul>
+    <hr />
+    <h2>Importar TXT</h2>
+    <form method="post" enctype="multipart/form-data" asp-page-handler="Import">
+        <label for="import-name">Salvar com o nome</label><input id="import-name" name="FileName" value="importado.txt" required maxlength="120" />
+        <label asp-for="Upload">Arquivo do seu computador · até 2 MB</label><input asp-for="Upload" type="file" accept=".txt,text/plain" required />
+        <button class="secondary" type="submit">Importar arquivo</button>
+    </form>
+</section>
+</div>
+<p class="hint">Pasta de vagas no servidor: <code>@Model.DirectoryPath</code>. Altere em <a asp-page="/Settings">Gmail e mensagem</a>.</p>
+@if (Model.Jobs.Count > 0) {
+<section class="card"><div class="section-title"><h2>@Model.FileName · @Model.Jobs.Count entradas</h2><a asp-page="/Batch" asp-route-file="@Model.FileName">Preparar envio →</a></div>
+<div class="table-wrap"><table><thead><tr><th>Email</th><th>Assunto</th><th>Validação</th></tr></thead><tbody>
+@foreach (var job in Model.Jobs) { <tr><td>@job.Offer?.Email</td><td>@job.Offer?.Subject</td><td>@(job.Error ?? "Válida")</td></tr> }
+</tbody></table></div></section>
+}

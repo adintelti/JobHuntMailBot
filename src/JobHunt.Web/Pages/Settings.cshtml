@@ -1,0 +1,46 @@
+@page
+@model SettingsModel
+@{ ViewData["Title"] = "Gmail e mensagem"; }
+<div class="eyebrow">CONFIGURAÇÃO</div><h1>Sua próxima candidatura.</h1>
+<p class="intro">Configure o remetente, escreva sua mensagem e anexe o currículo.</p>
+<div asp-validation-summary="All" class="errors" role="alert"></div>
+<form method="post" enctype="multipart/form-data" asp-page-handler="Save">
+<div class="columns">
+<section class="card">
+    <h2>Conta Gmail</h2>
+    <label asp-for="Input.Email">Seu email completo</label><input asp-for="Input.Email" type="email" autocomplete="username" required />
+    <label for="password">Senha de app do Google</label><input id="password" name="Password" type="password" autocomplete="new-password" maxlength="64" />
+    <p class="hint">@(Model.HasPassword ? "Uma senha está disponível. Deixe em branco para mantê-la na mesma conta." : "Informe uma senha de app de 16 caracteres.") Ao trocar de conta, informe a senha correspondente.</p>
+    <label class="check"><input asp-for="Input.RememberPassword" /> Lembrar senha nesta máquina</label>
+    <p class="hint">Desmarcada: a senha fica somente até o serviço encerrar.</p>
+    <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">Gerar senha de app no Google ↗</a>
+    <p class="hint">Ative a verificação em duas etapas na sua conta. Esta versão web usa SMTP com senha de app.</p>
+    <label asp-for="Input.SenderName">Nome do remetente</label><input asp-for="Input.SenderName" maxlength="200" />
+    <h2 class="spaced">Ritmo do envio</h2>
+    <div class="numbers">
+        <div><label asp-for="Input.DelaySeconds">Intervalo (s)</label><input asp-for="Input.DelaySeconds" type="number" min="0" max="3600" required /></div>
+        <div><label asp-for="Input.MaxRetries">Novas tentativas</label><input asp-for="Input.MaxRetries" type="number" min="0" max="3" required /></div>
+        <div><label asp-for="Input.TimeoutSeconds">Tempo limite (s)</label><input asp-for="Input.TimeoutSeconds" type="number" min="10" max="120" required /></div>
+    </div>
+</section>
+<section class="card">
+    <h2>Mensagem para as vagas</h2>
+    <label asp-for="Input.Body">Corpo do email</label><textarea asp-for="Input.Body" rows="12" maxlength="50000" required></textarea>
+    <p class="hint">Cada destinatário recebe uma mensagem individual com o assunto da vaga.</p>
+    <label asp-for="Attachment">Currículo · até 10 MB</label><input asp-for="Attachment" type="file" accept=".pdf,.doc,.docx,.rtf,.txt" />
+    @if (!string.IsNullOrEmpty(Model.Input.AttachmentName)) {
+        <p>Atual: <strong>@Model.Input.AttachmentName</strong></p>
+        <label class="check"><input asp-for="RemoveAttachment" /> Remover currículo atual</label>
+    }
+</section>
+</div>
+<section class="card"><h2>Arquivos de vagas</h2>
+    <label asp-for="Input.JobsDirectory">Pasta na máquina que executa o JobHunt</label><input asp-for="Input.JobsDirectory" required />
+    <p class="hint">Use um caminho absoluto. Exemplos: /home/seu-usuario/Vagas no Linux ou C:\Vagas no Windows. Configurações e histórico ficam separados em <code>@Model.DataDirectory</code>.</p>
+    <button type="submit">Salvar configurações</button>
+</section>
+</form>
+<div class="columns">
+    <form method="post" asp-page-handler="Test"><button class="secondary" type="submit">Enviar teste para meu email</button><p class="hint">Usa a última configuração salva, incluindo mensagem e currículo.</p></form>
+    <form method="post" asp-page-handler="Forget"><button class="secondary" type="submit">Esquecer senha local</button></form>
+</div>

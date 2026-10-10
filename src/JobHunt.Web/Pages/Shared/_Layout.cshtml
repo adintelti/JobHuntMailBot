@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] · JobHunt</title>
+    <link rel="stylesheet" href="~/site.css" asp-append-version="true" />
+    <script src="~/site.js" asp-append-version="true" defer></script>
+</head>
+<body>
+<header><div class="brand">JobHunt <span>MailBot Web</span></div><span class="local">Uso local · Gmail</span></header>
+<div class="shell">
+    <nav aria-label="Navegação principal">
+        <a asp-page="/Index">Cadastro de vagas</a>
+        <a asp-page="/Batch">Envio em lote</a>
+        <a asp-page="/Settings">Gmail e mensagem</a>
+        <a asp-page="/History">Acompanhamento</a>
+    </nav>
+    <main>
+        @if (TempData["Notice"] is string notice) { <div class="notice" role="status">@notice</div> }
+        @RenderBody()
+    </main>
+</div>
+<footer>As vagas e os logs ficam na máquina que executa o JobHunt. Sucesso significa aceitação pelo servidor SMTP.</footer>
+</body>
+</html>

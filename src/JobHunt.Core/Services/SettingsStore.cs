@@ -19,7 +19,16 @@ public sealed class SettingsStore
     public AppSettings Load()
     {
         if (!File.Exists(SettingsPath)) return new();
-        return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)) ?? new();
+        var json = File.ReadAllText(SettingsPath);
+        var settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new();
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new JsonException("O arquivo de configurações deve conter um objeto JSON.");
+        // Old installations only supported OAuth. Do not silently change their authentication method.
+        if (!document.RootElement.TryGetProperty(nameof(AppSettings.AuthenticationMode), out _)
+            && !string.IsNullOrWhiteSpace(settings.OAuthClientFile))
+            settings.AuthenticationMode = EmailAuthenticationMode.OAuth2;
+        return settings;
     }
 
     public async Task SaveAsync(AppSettings settings)

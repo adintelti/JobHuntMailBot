@@ -10,11 +10,16 @@ public partial class MainForm : Form
     private readonly SettingsStore _settings;
     private readonly JobFileStore _files = new();
     private readonly GmailAuthorization _authorization;
+    private readonly AppPasswordStore _appPasswords;
     private readonly BindingList<JobRow> _rows = [];
     private readonly bool _previewMode;
     private CancellationTokenSource? _operation;
     private bool _busy, _allowClose, _closeWhenIdle;
     private string? _lastLog;
+    private string _simpleEmail = "", _oauthEmail = "";
+    private bool _changingAuthentication;
+    private EmailAuthenticationMode _displayedMode = EmailAuthenticationMode.AppPassword;
+    private bool IsAppPassword => !oauthMode.Checked;
 
     public MainForm() : this(new SettingsStore()) { }
 
@@ -23,6 +28,7 @@ public partial class MainForm : Form
         _settings = settings;
         _previewMode = previewMode;
         _authorization = new GmailAuthorization(settings.DataDirectory);
+        _appPasswords = new AppPasswordStore(settings.DataDirectory);
         InitializeComponent();
         StyleButtons(this);
         jobsGrid.DataSource = _rows;
@@ -42,9 +48,38 @@ public partial class MainForm : Form
         outputPath.TextChanged += (_, _) => fileCount.Text = "Caminho selecionado. O total será atualizado ao incluir uma vaga.";
         Shown += async (_, _) =>
         {
-            if (!_previewMode && !string.IsNullOrWhiteSpace(outputPath.Text))
-                await RunOperationAsync(UpdateFileCountAsync);
+            if (_previewMode) return;
+            await RunOperationAsync(async () =>
+            {
+                if (rememberPassword.Checked && JobTextCodec.IsValidEmail(_simpleEmail))
+                {
+                    appPassword.Text = await _appPasswords.LoadAsync(_simpleEmail) ?? "";
+                    if (appPassword.TextLength == 0) rememberPassword.Checked = false;
+                }
+                if (!string.IsNullOrWhiteSpace(outputPath.Text)) await UpdateFileCountAsync();
+            });
         };
+        simpleMode.CheckedChanged += (_, _) => { if (simpleMode.Checked) ChangeAuthenticationMode(); };
+        oauthMode.CheckedChanged += (_, _) => { if (oauthMode.Checked) ChangeAuthenticationMode(); };
+        senderEmail.TextChanged += (_, _) =>
+        {
+            if (_changingAuthentication || !IsAppPassword) return;
+            var email = senderEmail.Text.Trim();
+            if (!string.Equals(email, _simpleEmail, StringComparison.OrdinalIgnoreCase))
+            { appPassword.Clear(); rememberPassword.Checked = false; }
+            _simpleEmail = email;
+        };
+        appPasswordHelp.LinkClicked += (_, _) =>
+        {
+            try { Process.Start(new ProcessStartInfo("https://myaccount.google.com/apppasswords") { UseShellExecute = true }); }
+            catch (Exception ex) { ShowError(ex); }
+        };
+        forgetPassword.Click += async (_, _) => await RunOperationAsync(async () =>
+        {
+            await _appPasswords.ForgetAsync(senderEmail.Text.Trim());
+            appPassword.Clear(); rememberPassword.Checked = false;
+            await PersistAsync(); AddHistory("Senha de app removida deste computador. Gere ou informe uma senha para enviar.");
+        });
         loadBatch.Click += async (_, _) => await ChooseBatchAsync();
         selectAll.Click += (_, _) => SelectRows(x => x.Offer is not null && !x.PreviouslySent
             && !x.PreviouslyIndeterminate && x.LastOutcome is null);
@@ -70,6 +105,7 @@ public partial class MainForm : Form
             _operation!.CancelAfter(TimeSpan.FromMinutes(3));
             appStatus.Text = "Autorize no navegador. Para cancelar, use Cancelar operação na aba Envio em lote.";
             var email = await _authorization.ConnectAsync(clientPath.Text, _operation.Token);
+            _oauthEmail = email;
             senderEmail.Text = email;
             connectionStatus.Text = "Conta autorizada";
             connectionStatus.ForeColor = Color.FromArgb(20, 112, 83);
@@ -83,7 +119,7 @@ public partial class MainForm : Form
             try { await _authorization.DisconnectAsync(clientPath.Text, _operation.Token); }
             finally
             {
-                senderEmail.Clear(); connectionStatus.Text = "Conta desconectada";
+                _oauthEmail = ""; senderEmail.Clear(); connectionStatus.Text = "Conta desconectada";
                 await PersistAsync();
             }
         });
@@ -136,25 +172,71 @@ public partial class MainForm : Form
 
     private void ApplySettings(AppSettings settings)
     {
+        _changingAuthentication = true;
         outputPath.Text = settings.OutputFilePath; clientPath.Text = settings.OAuthClientFile;
+        _simpleEmail = settings.AppPasswordEmail;
+        _oauthEmail = settings.OAuthSenderEmail;
+        if (string.IsNullOrEmpty(_simpleEmail))
+            _simpleEmail = settings.SenderEmail;
+        if (settings.AuthenticationMode == EmailAuthenticationMode.OAuth2 && string.IsNullOrEmpty(_oauthEmail))
+            _oauthEmail = settings.SenderEmail;
+        oauthMode.Checked = settings.AuthenticationMode == EmailAuthenticationMode.OAuth2;
+        simpleMode.Checked = !oauthMode.Checked;
+        _displayedMode = IsAppPassword ? EmailAuthenticationMode.AppPassword : EmailAuthenticationMode.OAuth2;
+        rememberPassword.Checked = settings.RememberAppPassword;
         senderEmail.Text = settings.SenderEmail; senderName.Text = settings.SenderName;
         messageBody.Text = settings.MessageBody; attachmentPath.Text = settings.AttachmentPath;
         delaySeconds.Value = Math.Clamp(settings.DelaySeconds, 0, 3600);
         maxRetries.Value = Math.Clamp(settings.MaxRetries, 0, 3);
         timeoutSeconds.Value = Math.Clamp(settings.TimeoutSeconds, 10, 300);
         testEmail.Text = settings.SenderEmail;
-        connectionStatus.Text = string.IsNullOrWhiteSpace(settings.SenderEmail) ? "Conta não conectada" : "Autorização salva";
+        _changingAuthentication = false;
+        UpdateAuthenticationUi();
+    }
+
+    private void ChangeAuthenticationMode()
+    {
+        if (_changingAuthentication) return;
+        if (_displayedMode == EmailAuthenticationMode.AppPassword) _simpleEmail = senderEmail.Text.Trim();
+        else _oauthEmail = senderEmail.Text.Trim();
+        _changingAuthentication = true;
+        senderEmail.Text = IsAppPassword ? _simpleEmail : _oauthEmail;
+        _displayedMode = IsAppPassword ? EmailAuthenticationMode.AppPassword : EmailAuthenticationMode.OAuth2;
+        _changingAuthentication = false;
+        UpdateAuthenticationUi();
+    }
+
+    private void UpdateAuthenticationUi()
+    {
+        simpleAuthenticationPanel.Visible = IsAppPassword;
+        oauthAuthenticationPanel.Visible = !IsAppPassword;
+        senderEmail.ReadOnly = !IsAppPassword;
+        connectionStatus.Text = IsAppPassword ? "SMTP seguro • porta 587"
+            : string.IsNullOrWhiteSpace(_oauthEmail) ? "Conta não conectada" : "Autorização salva";
+        connectionStatus.ForeColor = Color.FromArgb(83, 99, 115);
+        authenticationInfo.Text = IsAppPassword
+            ? "Use a senha de app de 16 caracteres gerada pelo Google. Ative a verificação em duas etapas. Servidor, porta e segurança são automáticos."
+            : "A conexão abre o navegador. Tokens são protegidos pelo usuário do Windows. Consulte o README para configurar o Google Cloud.";
     }
 
     private AppSettings ReadSettings() => new()
     {
         OutputFilePath = outputPath.Text.Trim(), OAuthClientFile = clientPath.Text,
-        SenderEmail = senderEmail.Text, SenderName = senderName.Text.Trim(), MessageBody = messageBody.Text,
+        SenderEmail = senderEmail.Text.Trim(), SenderName = senderName.Text.Trim(), MessageBody = messageBody.Text,
+        AuthenticationMode = IsAppPassword ? EmailAuthenticationMode.AppPassword : EmailAuthenticationMode.OAuth2,
+        AppPasswordEmail = _simpleEmail, OAuthSenderEmail = _oauthEmail,
+        RememberAppPassword = rememberPassword.Checked,
         AttachmentPath = attachmentPath.Text, DelaySeconds = (int)delaySeconds.Value,
         MaxRetries = (int)maxRetries.Value, TimeoutSeconds = (int)timeoutSeconds.Value
     };
 
-    private Task PersistAsync() => _previewMode ? Task.CompletedTask : _settings.SaveAsync(ReadSettings());
+    private async Task PersistAsync()
+    {
+        if (_previewMode) return;
+        if (JobTextCodec.IsValidEmail(_simpleEmail) && (IsAppPassword || !rememberPassword.Checked))
+            await _appPasswords.UpdateAsync(_simpleEmail, appPassword.Text, rememberPassword.Checked);
+        await _settings.SaveAsync(ReadSettings());
+    }
 
     private void UpdatePreview()
     {
@@ -221,7 +303,7 @@ public partial class MainForm : Form
         using var dialog = new OpenFileDialog { Title = "Selecionar cliente OAuth desktop do Google", Filter = "JSON OAuth (*.json)|*.json" };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         if (!string.Equals(dialog.FileName, clientPath.Text, StringComparison.OrdinalIgnoreCase))
-        { senderEmail.Clear(); connectionStatus.Text = "Conecte a conta com este cliente"; }
+        { _oauthEmail = ""; senderEmail.Clear(); connectionStatus.Text = "Conecte a conta com este cliente"; }
         clientPath.Text = dialog.FileName;
         await RunOperationAsync(PersistAsync);
     }
@@ -265,13 +347,21 @@ public partial class MainForm : Form
 
     private MailContent ReadMailContent()
     {
-        if (!File.Exists(clientPath.Text) || !JobTextCodec.IsValidEmail(senderEmail.Text))
+        if (!JobTextCodec.IsValidEmail(senderEmail.Text.Trim()))
+            throw new InvalidOperationException(IsAppPassword ? "Informe seu endereço completo do Gmail na aba Gmail e mensagem."
+                : "Conecte sua conta Google na aba Gmail e mensagem.");
+        if (IsAppPassword) AppPasswordStore.Normalize(appPassword.Text);
+        else if (!File.Exists(clientPath.Text))
             throw new InvalidOperationException("Selecione o JSON OAuth e conecte sua conta na aba Gmail e mensagem.");
         if (string.IsNullOrWhiteSpace(messageBody.Text)) throw new InvalidOperationException("Preencha o corpo da mensagem na aba Gmail e mensagem.");
         if (!string.IsNullOrWhiteSpace(attachmentPath.Text) && !File.Exists(attachmentPath.Text))
             throw new FileNotFoundException("O currículo selecionado não está disponível. Escolha o arquivo novamente.");
-        return new(senderEmail.Text, senderName.Text.Trim(), messageBody.Text, attachmentPath.Text, (int)timeoutSeconds.Value);
+        return new(senderEmail.Text.Trim(), senderName.Text.Trim(), messageBody.Text, attachmentPath.Text, (int)timeoutSeconds.Value);
     }
+
+    private GmailSender CreateGmailSender() => new(IsAppPassword
+        ? new AppPasswordAuthentication(appPassword.Text)
+        : new OAuthGmailAuthentication(_authorization, clientPath.Text));
 
     private async Task SendBatchAsync()
     {
@@ -302,7 +392,7 @@ public partial class MainForm : Form
             batchSummary.Text = $"{batchProgress.Value}/{selected.Count} processadas • acompanhando tentativas";
             AddHistory($"Vaga {result.Index} • {row.Status} • {result.Offer.Email} • {result.Detail}");
         });
-        var sender = new BatchSender(new GmailSender(_authorization, clientPath.Text));
+        var sender = new BatchSender(CreateGmailSender());
         var summary = await sender.RunAsync(batchId, batchPath.Text,
             selected.Select(x => new BatchItem(x.Index, x.Offer!)).ToList(), content,
             new BatchOptions(TimeSpan.FromSeconds((int)delaySeconds.Value), (int)maxRetries.Value), log,
@@ -317,15 +407,16 @@ public partial class MainForm : Form
 
     private async Task SendTestAsync()
     {
-        if (!JobTextCodec.IsValidEmail(testEmail.Text.Trim())) throw new InvalidOperationException("Informe um destinatário válido para o teste.");
+        var recipient = string.IsNullOrWhiteSpace(testEmail.Text) ? senderEmail.Text.Trim() : testEmail.Text.Trim();
+        if (!JobTextCodec.IsValidEmail(recipient)) throw new InvalidOperationException("Informe um destinatário válido para o teste.");
         var content = ReadMailContent();
         await PersistAsync();
         var batchId = Guid.NewGuid();
         await using var log = new BatchLog(_settings.LogsDirectory, batchId);
         _lastLog = log.FilePath;
-        var sender = new BatchSender(new GmailSender(_authorization, clientPath.Text));
+        var sender = new BatchSender(CreateGmailSender());
         var progress = new Progress<SendResult>(result => AddHistory("Teste • " + OutcomeText(result.Outcome) + " • " + result.Detail));
-        var summary = await sender.RunAsync(batchId, "[teste]", [new(1, new(testEmail.Text.Trim(), "JobHunt MailBot — teste de envio"))],
+        var summary = await sender.RunAsync(batchId, "[teste]", [new(1, new(recipient, "JobHunt MailBot — teste de envio"))],
             content, new(TimeSpan.Zero, 0), log, progress, _operation!.Token);
         await Task.Yield();
         MessageBox.Show(this, summary.Success == 1 ? "Email de teste aceito pelo servidor. Confira o destinatário."
@@ -439,5 +530,11 @@ public partial class MainForm : Form
             DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size));
             bitmap.Save(Path.Combine(directory, $"tela-{tabs.SelectedIndex + 1}.png"));
         }
+        tabs.SelectedTab = settingsTab;
+        oauthMode.Checked = true;
+        Application.DoEvents();
+        using var oauthBitmap = new Bitmap(Width, Height);
+        DrawToBitmap(oauthBitmap, new Rectangle(Point.Empty, Size));
+        oauthBitmap.Save(Path.Combine(directory, "tela-3-oauth.png"));
     }
 }

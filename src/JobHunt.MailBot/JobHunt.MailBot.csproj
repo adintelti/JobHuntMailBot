@@ -9,8 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Apis.Auth" Version="1.77.0" />
-    <PackageReference Include="MailKit" Version="4.18.1" />
+    <ProjectReference Include="..\JobHunt.Core\JobHunt.Core.csproj" />
   </ItemGroup>
 
 </Project>

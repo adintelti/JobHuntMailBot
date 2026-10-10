@@ -5,7 +5,8 @@ using JobHunt.MailBot.Models;
 
 namespace JobHunt.MailBot.Services;
 
-public sealed class GmailSender(GmailAuthorization authorization, string clientFile) : IEmailSender
+public sealed class GmailSender(IGmailAuthentication authentication,
+    Func<int, IGmailSmtpSession>? sessionFactory = null) : IEmailSender
 {
     public async Task<string> SendAsync(JobOffer offer, MailContent content, CancellationToken cancellationToken)
     {
@@ -15,7 +16,7 @@ public sealed class GmailSender(GmailAuthorization authorization, string clientF
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(content.TimeoutSeconds));
         var token = timeout.Token;
-        using var smtp = new SmtpClient { Timeout = content.TimeoutSeconds * 1000 };
+        using var smtp = sessionFactory?.Invoke(content.TimeoutSeconds) ?? new GmailSmtpSession(content.TimeoutSeconds);
         using var message = new MimeMessage();
         try
         {
@@ -27,21 +28,20 @@ public sealed class GmailSender(GmailAuthorization authorization, string clientF
             if (!string.IsNullOrWhiteSpace(content.AttachmentPath))
                 await builder.Attachments.AddAsync(content.AttachmentPath, token);
             message.Body = builder.ToMessageBody();
-            var accessToken = await authorization.GetAccessTokenAsync(clientFile, token);
-            await smtp.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls, token);
-            await smtp.AuthenticateAsync(new SaslMechanismOAuth2(content.SenderEmail, accessToken), token);
+            await smtp.ConnectAsync(token);
+            await authentication.AuthenticateAsync(smtp, content.SenderEmail, token);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (OperationCanceledException)
         { throw new MailSendException("Tempo esgotado antes de transmitir a mensagem.", SendOutcome.Failure, true); }
         catch (MailKit.Security.AuthenticationException)
-        { throw new MailSendException("O Gmail recusou a autenticação. Reconecte sua conta e confira a autorização SMTP.", SendOutcome.Failure); }
+        { throw new MailSendException(authentication.FailureMessage, SendOutcome.Failure); }
         catch (Google.Apis.Auth.OAuth2.Responses.TokenResponseException)
         { throw new MailSendException("A autorização do Google expirou ou foi revogada. Conecte a conta novamente.", SendOutcome.Failure); }
         catch (Exception ex)
         {
             throw new MailSendException("Não foi possível preparar ou conectar o envio (" + ex.GetType().Name + "). "
-                + (ex is InvalidOperationException ? ex.Message : "Confira a conexão, o JSON OAuth e o anexo."),
+                + "Confira a conexão, as credenciais e o anexo.",
                 SendOutcome.Failure, ex is IOException or System.Net.Sockets.SocketException);
         }
         {

@@ -1,0 +1,35 @@
+@page
+@model BatchModel
+@{ ViewData["Title"] = "Envio em lote"; }
+<div class="eyebrow">CANDIDATURAS</div><h1>Revise. Selecione. Envie.</h1>
+<p class="intro">Uma mensagem por vaga. Falhas individuais são registradas e o lote continua.</p>
+<div asp-validation-summary="All" class="errors" role="alert"></div>
+@if (Model.Active is not null) { <div class="notice">Existe um lote ativo. <a asp-page="/History" asp-route-id="@Model.Active.Id">Acompanhar ou cancelar →</a></div> }
+<section class="card"><form method="get" class="inline-form">
+    <label for="file">Arquivo de vagas</label><select id="file" name="file">@foreach (var file in Model.Files) { <option value="@file" selected="@(file == Model.FileName)">@file</option> }</select>
+    <button class="secondary" type="submit">Carregar TXT</button>
+</form></section>
+@if (Model.Jobs.Count > 0) {
+<form method="post" asp-page-handler="Send">
+    <input type="hidden" name="file" value="@Model.FileName" />
+    <section class="card">
+        <div class="section-title"><h2>@Model.FileName</h2><button type="button" class="secondary" data-select-jobs>Marcar / desmarcar disponíveis</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Enviar</th><th>Email</th><th>Assunto</th><th>Situação</th></tr></thead><tbody>
+        @foreach (var job in Model.Jobs) {
+            var blocked = job.Offer is null || Model.Protected.Contains(job.Offer.Key);
+            <tr><td>@if (!blocked) { <input type="checkbox" name="Selected" value="@job.Offer!.Key" aria-label="Selecionar @job.Offer.Email, @job.Offer.Subject" /> }</td>
+                <td>@job.Offer?.Email</td><td>@job.Offer?.Subject</td><td>@(job.Error ?? (blocked ? "Já enviado / indeterminado" : "Disponível"))</td></tr>
+        }
+        </tbody></table></div>
+        <p class="hint">Itens enviados ou indeterminados ficam bloqueados. Confira Enviados no Gmail antes de qualquer reenvio.</p>
+    </section>
+    <section class="card"><h2>Confira sua mensagem</h2>
+        <p>De: <strong>@Model.Settings.SenderName &lt;@Model.Settings.Email&gt;</strong></p>
+        <pre class="message-preview">@Model.Settings.Body</pre>
+        <p>Currículo: @(string.IsNullOrEmpty(Model.Settings.AttachmentName) ? "Sem anexo" : Model.Settings.AttachmentName)</p>
+        <a asp-page="/Settings">Alterar Gmail e mensagem →</a>
+        <label class="check spaced"><input asp-for="Confirm" required /> Revisei os destinatários, assuntos, mensagem e currículo.</label>
+        <button type="submit" disabled="@(Model.Active is not null)">Enviar selecionadas</button>
+    </section>
+</form>
+} else { <p class="muted">Cadastre ou importe um TXT para preparar o envio.</p> }

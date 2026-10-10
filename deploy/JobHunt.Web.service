@@ -1,0 +1,16 @@
+[Unit]
+Description=JobHunt MailBot Web (local)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/opt/JobHunt.Web
+ExecStart=%h/.local/opt/JobHunt.Web/JobHunt.Web
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=75
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

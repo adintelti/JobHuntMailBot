@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace JobHunt.MailBot.Models;
 
@@ -13,6 +14,9 @@ public sealed record ImportedJob(int SourceLine, JobOffer? Offer, string? Error)
 
 public enum SendOutcome { Success, Failure, Indeterminate }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EmailAuthenticationMode { AppPassword, OAuth2 }
+
 public sealed record SendResult(Guid BatchId, string SourceFile, int Index, JobOffer Offer,
     DateTimeOffset Timestamp, int Attempt, SendOutcome Outcome, string Detail, bool IsFinal = true);
 
@@ -21,6 +25,10 @@ public sealed class AppSettings
     public string OutputFilePath { get; set; } = "";
     public string OAuthClientFile { get; set; } = "";
     public string SenderEmail { get; set; } = "";
+    public EmailAuthenticationMode AuthenticationMode { get; set; } = EmailAuthenticationMode.AppPassword;
+    public string AppPasswordEmail { get; set; } = "";
+    public string OAuthSenderEmail { get; set; } = "";
+    public bool RememberAppPassword { get; set; }
     public string SenderName { get; set; } = "";
     public string MessageBody { get; set; } = "";
     public string AttachmentPath { get; set; } = "";

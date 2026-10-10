@@ -7,3 +7,5 @@ credentials*.json
 client_secret*.json
 *.user
 *.suo
+**/App_Data/
+*.pfx
