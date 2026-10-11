@@ -63,6 +63,70 @@ JobHunt__DataDirectory=/home/seu-usuario/.local/share/JobHunt.Web ./JobHunt.Web
 
 Se a porta estiver ocupada, use `JobHunt__Port=5081 ./JobHunt.Web` e abra http://127.0.0.1:5081. O endereço de escuta continua sendo loopback.
 
+### Executar a versão web no Windows
+
+Os comandos abaixo usam PowerShell. Execute a aplicação com seu usuário habitual do Windows para manter os dados no mesmo perfil.
+
+#### Pelo código-fonte
+
+Instale o **SDK .NET 10**. No Visual Studio 2026, use a carga **ASP.NET e desenvolvimento Web**, abra `JobHunt.MailBot.sln`, defina **JobHunt.Web** como projeto de inicialização e pressione F5.
+
+Para executar pelo terminal, abra o PowerShell na pasta da solução:
+
+```powershell
+Set-Location C:\git\JobHunt
+dotnet run --project .\src\JobHunt.Web
+```
+
+Quando aparecer `Now listening on: http://127.0.0.1:5080`, abra **http://127.0.0.1:5080** no navegador. Mantenha o terminal aberto durante o uso. Para encerrar, pressione **Ctrl+C** e aguarde o término do processo. Fechar apenas o navegador mantém o serviço e eventuais lotes em execução.
+
+#### Pela publicação Windows x64
+
+Para gerar uma pasta pronta para distribuir, execute na raiz da solução, com o SDK .NET 10 instalado:
+
+```powershell
+.\scripts\publish-web.ps1 -Runtime win-x64
+```
+
+O resultado fica em `artifacts\web-win-x64`. Também é possível publicar diretamente:
+
+```powershell
+dotnet publish .\src\JobHunt.Web -c Release -r win-x64 --self-contained true -o .\artifacts\web-win-x64
+```
+
+Essa publicação inclui o runtime .NET. No Windows x64 de destino, copie **a pasta inteira**, incluindo `wwwroot` e as bibliotecas. Abra o PowerShell na pasta publicada e execute:
+
+```powershell
+Set-Location C:\git\JobHunt\artifacts\web-win-x64
+.\JobHunt.Web.exe
+```
+
+Se copiou a publicação para outro local, ajuste o caminho do `Set-Location`. Execute a partir dessa pasta para que os arquivos de estilo e scripts sejam encontrados. Abra **http://127.0.0.1:5080** no navegador da mesma máquina. O executável da interface web é `JobHunt.Web.exe`; `JobHunt.MailBot.exe` abre a interface Windows Forms.
+
+#### Porta e pasta de dados no Windows
+
+As configurações, senhas salvas, currículos e histórico web ficam por padrão em `%LOCALAPPDATA%\JobHunt.Web`, separados da pasta dos binários e dos dados do Windows Forms. Para abrir essa pasta no Explorador de Arquivos, cole `%LOCALAPPDATA%\JobHunt.Web` na barra de endereço.
+
+Se a porta 5080 estiver ocupada, inclusive por uma instância no WSL, escolha outra porta antes de iniciar:
+
+```powershell
+$env:JobHunt__Port = '5081'
+.\JobHunt.Web.exe
+```
+
+Nesse caso, abra **http://127.0.0.1:5081**. Para executar pelo código na mesma porta, use `dotnet run --project .\src\JobHunt.Web` na raiz da solução após definir a variável.
+
+Para escolher uma pasta permanente diferente para os dados:
+
+```powershell
+$env:JobHunt__DataDirectory = Join-Path $env:LOCALAPPDATA 'JobHunt.Web-Pessoal'
+.\JobHunt.Web.exe
+```
+
+Essas variáveis valem para os processos iniciados a partir desse terminal. Ao escolher uma pasta nova, a aplicação inicia com configurações e histórico próprios; os dados da pasta anterior não são migrados automaticamente. Para voltar aos valores padrão, encerre a aplicação e abra um novo PowerShell sem definir essas variáveis.
+
+Na primeira execução, abra **Gmail e mensagem**, configure a senha de app, a mensagem e o currículo e salve. A pasta dos TXT pode ser alterada nessa tela, por exemplo para `C:\Vagas`. Para atualizar a publicação, encerre a aplicação, substitua os binários e preserve a pasta de dados completa, incluindo as chaves e o certificado de proteção.
+
 ### Publicar e executar no Linux
 
 No PowerShell, inclusive a partir do Windows:
